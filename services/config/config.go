@@ -3,9 +3,6 @@ package config
 import (
 	"context"
 	"fmt"
-	"scow-slurm-adapter/caller"
-	pb "scow-slurm-adapter/gen/go"
-	"scow-slurm-adapter/utils"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +11,10 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"scow-slurm-adapter/caller"
+	pb "scow-slurm-adapter/gen/go"
+	exporter "scow-slurm-adapter/resource"
+	"scow-slurm-adapter/utils"
 )
 
 type ServerConfig struct {
@@ -828,57 +829,67 @@ func getNodeInfo(node string, wg *sync.WaitGroup, nodeChan chan<- *pb.NodeInfo, 
 
 func (s *ServerConfig) GetClusterNodesInfo(ctx context.Context, in *pb.GetClusterNodesInfoRequest) (*pb.GetClusterNodesInfoResponse, error) {
 	var (
-		wg            sync.WaitGroup
-		nodesInfo     []*pb.NodeInfo
-		nodesInfoList []string
+		//wg            sync.WaitGroup
+		nodesInfo []*pb.NodeInfo
+		//nodesInfoList []string
 	)
 	caller.Logger.Infof("Received request GetClusterNodesInfo: %v", in)
-	nodeChan := make(chan *pb.NodeInfo, len(in.NodeNames))
-	errChan := make(chan error, len(in.NodeNames))
+	//nodeChan := make(chan *pb.NodeInfo, len(in.NodeNames))
+	//errChan := make(chan error, len(in.NodeNames))
 
-	if len(in.NodeNames) == 0 {
-		// 获取集群中全部节点的信息
-		getNodesInfoCmd := "scontrol show nodes --oneliner | grep Partitions | awk '{print $1}' | awk -F= '{print $2}' | tr '\n' ';'" // 获取全部计算节点主机名
-		output, err := utils.RunCommand(getNodesInfoCmd)
-		if err != nil {
-			errInfo := &errdetails.ErrorInfo{
-				Reason: "COMMAND_EXEC_FAILED",
-			}
-			st := status.New(codes.Internal, "Exec command failed or slurmctld down.")
-			st, _ = st.WithDetails(errInfo)
-			return nil, st.Err()
+	if in.NodeNames != nil {
+		for _, nodeName := range in.NodeNames {
+			nodesInfo = append(nodesInfo, exporter.NodeInfos[nodeName])
 		}
-		nodesInfoList = strings.Split(output, ";")
-		nodesInfoList = nodesInfoList[:len(nodesInfoList)-1]
 	} else {
-		nodesInfoList = in.NodeNames
-	}
-
-	for _, node := range nodesInfoList {
-		node1 := node
-		wg.Add(1)
-		go func() {
-			getNodeInfo(node1, &wg, chan<- *pb.NodeInfo(nodeChan), chan<- error(errChan))
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(nodeChan)
-		close(errChan)
-	}()
-
-	for nodeInfo := range nodeChan {
-		nodesInfo = append(nodesInfo, nodeInfo)
-	}
-
-	select {
-	case err := <-errChan:
-		if err != nil {
-			return nil, err
+		for _, info := range exporter.NodeInfos {
+			nodesInfo = append(nodesInfo, info)
 		}
-	default:
 	}
+
+	//if len(in.NodeNames) == 0 {
+	//	// 获取集群中全部节点的信息
+	//	getNodesInfoCmd := "scontrol show nodes --oneliner | grep Partitions | awk '{print $1}' | awk -F= '{print $2}' | tr '\n' ';'" // 获取全部计算节点主机名
+	//	output, err := utils.RunCommand(getNodesInfoCmd)
+	//	if err != nil {
+	//		errInfo := &errdetails.ErrorInfo{
+	//			Reason: "COMMAND_EXEC_FAILED",
+	//		}
+	//		st := status.New(codes.Internal, "Exec command failed or slurmctld down.")
+	//		st, _ = st.WithDetails(errInfo)
+	//		return nil, st.Err()
+	//	}
+	//	nodesInfoList = strings.Split(output, ";")
+	//	nodesInfoList = nodesInfoList[:len(nodesInfoList)-1]
+	//} else {
+	//	nodesInfoList = in.NodeNames
+	//}
+	//
+	//for _, node := range nodesInfoList {
+	//	node1 := node
+	//	wg.Add(1)
+	//	go func() {
+	//		getNodeInfo(node1, &wg, chan<- *pb.NodeInfo(nodeChan), chan<- error(errChan))
+	//	}()
+	//}
+	//
+	//go func() {
+	//	wg.Wait()
+	//	close(nodeChan)
+	//	close(errChan)
+	//}()
+	//
+	//for nodeInfo := range nodeChan {
+	//	nodesInfo = append(nodesInfo, nodeInfo)
+	//}
+	//
+	//select {
+	//case err := <-errChan:
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//default:
+	//}
 	return &pb.GetClusterNodesInfoResponse{Nodes: nodesInfo}, nil
 }
 

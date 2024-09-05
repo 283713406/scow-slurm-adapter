@@ -9,6 +9,7 @@ import (
 
 	"scow-slurm-adapter/caller"
 	pb "scow-slurm-adapter/gen/go"
+	exporter "scow-slurm-adapter/resource"
 
 	"scow-slurm-adapter/services/account"
 	"scow-slurm-adapter/services/app"
@@ -21,6 +22,14 @@ import (
 )
 
 func main() {
+	// Get new TopologyUpdater instance
+	instance, err := exporter.NewResourceExporter()
+	if err != nil {
+		caller.Logger.Warnf("failed to initialize topology updater instance, %v", err)
+	}
+	go instance.Run()
+	defer instance.Stop()
+
 	os.Setenv("SLURM_TIME_FORMAT", "standard") // 新加slurm环境变量
 	// 启动服务
 	portString := fmt.Sprintf(":%d", caller.ConfigValue.Service.Port)
